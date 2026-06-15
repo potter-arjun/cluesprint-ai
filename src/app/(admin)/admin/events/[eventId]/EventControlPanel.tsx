@@ -123,13 +123,29 @@ export function EventControlPanel({ event, teams, missions, submissions }: Event
             </span>
           </div>
           {event.join_code && (
-            <button
-              onClick={() => { navigator.clipboard.writeText(event.join_code!); toast.success('Code copied!') }}
-              className="flex items-center gap-2 mt-2 text-blue-400 hover:text-blue-300 text-sm"
-            >
-              <span className="font-mono text-lg font-bold">{event.join_code}</span>
-              <Copy className="w-3 h-3" />
-            </button>
+            <div className="flex items-center gap-3 mt-2">
+              <span className="font-mono text-lg font-bold text-blue-400">{event.join_code}</span>
+              <button
+                onClick={() => { navigator.clipboard.writeText(event.join_code!); toast.success('Code copied!') }}
+                className="flex items-center gap-1 text-slate-400 hover:text-white text-xs transition-colors"
+                title="Copy code"
+              >
+                <Copy className="w-3 h-3" />
+                Code
+              </button>
+              <button
+                onClick={() => {
+                  const url = `${window.location.origin}/join?code=${event.join_code}`
+                  navigator.clipboard.writeText(url)
+                  toast.success('Join link copied!')
+                }}
+                className="flex items-center gap-1 text-slate-400 hover:text-white text-xs transition-colors"
+                title="Copy join link"
+              >
+                <Copy className="w-3 h-3" />
+                Join Link
+              </button>
+            </div>
           )}
         </div>
 
