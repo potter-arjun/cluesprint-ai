@@ -53,8 +53,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Ensure the user profile exists (anonymous users may not have triggered the DB hook yet)
+    // Use a unique placeholder email since the column is NOT NULL UNIQUE
     await adminClient.from('users').upsert(
-      { id: userId, name: name.trim(), role: 'player', email: '' } as never,
+      { id: userId, name: name.trim(), role: 'player', email: `guest-${userId}@anon.local` } as never,
       { onConflict: 'id', ignoreDuplicates: false }
     )
 
