@@ -31,11 +31,6 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // ── Route classification ───────────────────────────────────────────────────
-  const publicPaths = ['/', '/login', '/register', '/forgot-password']
-  const isPublicExact = publicPaths.includes(pathname)
-  const isPublicPrefix = pathname.startsWith('/auth/')
-  const isPublic = isPublicExact || isPublicPrefix
-
   const protectedPrefixes = ['/dashboard', '/events', '/profile', '/achievements', '/admin']
   const isProtected = protectedPrefixes.some((p) => pathname.startsWith(p))
 
