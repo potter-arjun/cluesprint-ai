@@ -181,9 +181,10 @@ export function EventControlPanel({ event, teams, missions, submissions }: Event
       </div>
 
       {/* Quick stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         {[
           { label: 'Teams', value: teams.length, icon: Users, color: 'text-blue-400' },
+          { label: 'Players', value: teams.reduce((sum, t) => sum + t.team_members.length, 0), icon: Users, color: 'text-cyan-400' },
           { label: 'Missions', value: missions.length, icon: Target, color: 'text-purple-400' },
           { label: 'Submissions', value: submissions.length, icon: FileCheck, color: 'text-green-400' },
         ].map(({ label, value, icon: Icon, color }) => (
