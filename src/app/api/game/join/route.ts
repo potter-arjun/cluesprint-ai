@@ -52,8 +52,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'This event has already ended' }, { status: 409 })
     }
 
-    // Update the user's display name
-    await adminClient.from('users').update({ name: name.trim() }).eq('id', userId)
+    // Ensure the user profile exists (anonymous users may not have triggered the DB hook yet)
+    await adminClient.from('users').upsert(
+      { id: userId, name: name.trim(), role: 'player', email: '' } as never,
+      { onConflict: 'id', ignoreDuplicates: false }
+    )
 
     // Check if already on a team in this event
     const { data: existing } = await supabase
