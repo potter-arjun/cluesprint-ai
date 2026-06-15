@@ -41,9 +41,15 @@ function JoinForm() {
       const { data: anonData, error: anonError } = await supabase.auth.signInAnonymously()
       if (anonError || !anonData.user) throw new Error(anonError?.message ?? 'Sign-in failed')
 
+      // Get token explicitly — cookie may not be set before the fetch fires
+      const { data: { session } } = await supabase.auth.getSession()
+
       const res = await fetch('/api/game/join', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({ code: code.trim().toUpperCase(), name: name.trim() }),
       })
       const json = await res.json()

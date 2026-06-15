@@ -6,10 +6,25 @@ import { getUser } from '@/lib/auth'
 // POST /api/game/join — join an event by code without a full account
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const user = await getUser()
+    const adminClient = createAdminClient()
 
-    if (!user) {
+    // Try cookie-based auth first, fall back to Bearer token (anonymous sign-in
+    // sets the session client-side; the cookie may not arrive before this fetch fires)
+    let userId: string | null = null
+
+    const cookieUser = await getUser()
+    if (cookieUser) {
+      userId = cookieUser.id
+    } else {
+      const authHeader = request.headers.get('authorization')
+      if (authHeader?.startsWith('Bearer ')) {
+        const token = authHeader.slice(7)
+        const { data: { user: tokenUser } } = await adminClient.auth.getUser(token)
+        if (tokenUser) userId = tokenUser.id
+      }
+    }
+
+    if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -19,8 +34,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'name and code are required' }, { status: 400 })
     }
 
+    // Use admin client for all queries so RLS doesn't block anonymous users
+    const supabase = await createClient()
+
     // Find event by join code
-    const { data: event, error: eventError } = await supabase
+    const { data: event, error: eventError } = await adminClient
       .from('events')
       .select('id, name, status, max_players_per_team, max_teams')
       .eq('join_code', code.trim().toUpperCase())
@@ -34,39 +52,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'This event has already ended' }, { status: 409 })
     }
 
-    // Update the anonymous user's display name
-    const adminClient = createAdminClient()
-    await adminClient
-      .from('users')
-      .update({ name: name.trim() })
-      .eq('id', user.id)
+    // Update the user's display name
+    await adminClient.from('users').update({ name: name.trim() }).eq('id', userId)
 
     // Check if already on a team in this event
     const { data: existing } = await supabase
       .from('team_members')
       .select('team_id, teams!inner(event_id)')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('teams.event_id', event.id)
       .maybeSingle()
 
     if (existing) {
-      // Already joined — just return the event
       return NextResponse.json({ eventId: event.id })
     }
 
-    // Get all teams for this event with member counts
-    const { data: teams } = await supabase
+    // Get all teams with member counts
+    const { data: teams } = await adminClient
       .from('teams')
       .select('id, team_members(count)')
       .eq('event_id', event.id)
 
     if (!teams || teams.length === 0) {
-      return NextResponse.json({ error: 'No teams available in this event yet. Ask the admin to create teams.' }, { status: 409 })
+      return NextResponse.json(
+        { error: 'No teams available yet. Ask the admin to create teams first.' },
+        { status: 409 }
+      )
     }
 
     const maxPerTeam = event.max_players_per_team ?? 5
 
-    // Find team with fewest members that isn't full
     const available = teams
       .map(t => ({
         id: t.id,
@@ -81,10 +96,9 @@ export async function POST(request: NextRequest) {
 
     const targetTeam = available[0]
 
-    // Add user to team using service role to bypass RLS
     const { error: insertError } = await adminClient.from('team_members').insert({
       team_id: targetTeam.id,
-      user_id: user.id,
+      user_id: userId,
       role: targetTeam.count === 0 ? 'captain' : 'member',
     })
 
