@@ -3,6 +3,11 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import type { Database } from '@/types/database'
 
+export async function GET(request: Request) {
+  const origin = new URL(request.url).origin
+  return NextResponse.redirect(new URL('/login', origin), { status: 302 })
+}
+
 export async function POST(request: Request) {
   const cookieStore = await cookies()
 
