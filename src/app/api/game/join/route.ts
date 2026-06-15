@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getUser } from '@/lib/auth'
 
@@ -34,9 +33,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'name and code are required' }, { status: 400 })
     }
 
-    // Use admin client for all queries so RLS doesn't block anonymous users
-    const supabase = await createClient()
-
     // Find event by join code
     const { data: event, error: eventError } = await adminClient
       .from('events')
@@ -60,7 +56,7 @@ export async function POST(request: NextRequest) {
     )
 
     // Check if already on a team in this event
-    const { data: existing } = await supabase
+    const { data: existing } = await adminClient
       .from('team_members')
       .select('team_id, teams!inner(event_id)')
       .eq('user_id', userId)
@@ -71,22 +67,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ eventId: event.id })
     }
 
-    // Get all teams with member counts
+    // Try to assign to an existing team with space
     const { data: teams } = await adminClient
       .from('teams')
       .select('id, team_members(count)')
       .eq('event_id', event.id)
 
-    if (!teams || teams.length === 0) {
-      return NextResponse.json(
-        { error: 'No teams available yet. Ask the admin to create teams first.' },
-        { status: 409 }
-      )
-    }
-
     const maxPerTeam = event.max_players_per_team ?? 5
 
-    const available = teams
+    const available = (teams ?? [])
       .map(t => ({
         id: t.id,
         count: (t.team_members as { count: number }[])?.[0]?.count ?? 0,
@@ -94,16 +83,46 @@ export async function POST(request: NextRequest) {
       .filter(t => t.count < maxPerTeam)
       .sort((a, b) => a.count - b.count)
 
-    if (available.length === 0) {
-      return NextResponse.json({ error: 'All teams are full' }, { status: 409 })
+    let teamId: string
+
+    if (available.length > 0) {
+      teamId = available[0].id
+    } else {
+      // Auto-create a solo team named after the player
+      const colors = ['#2563EB', '#7C3AED', '#059669', '#DC2626', '#D97706', '#0891B2', '#BE185D', '#65A30D']
+      const color = colors[(teams?.length ?? 0) % colors.length]
+
+      // Ensure unique team name within event
+      const baseName = name.trim()
+      let teamName = baseName
+      let suffix = 1
+      while (true) {
+        const { data: clash } = await adminClient
+          .from('teams')
+          .select('id')
+          .eq('event_id', event.id)
+          .eq('name', teamName)
+          .maybeSingle()
+        if (!clash) break
+        teamName = `${baseName} ${++suffix}`
+      }
+
+      const { data: newTeam, error: teamError } = await adminClient
+        .from('teams')
+        .insert({ event_id: event.id, name: teamName, color })
+        .select('id')
+        .single()
+
+      if (teamError || !newTeam) {
+        return NextResponse.json({ error: 'Could not create team' }, { status: 500 })
+      }
+      teamId = newTeam.id
     }
 
-    const targetTeam = available[0]
-
     const { error: insertError } = await adminClient.from('team_members').insert({
-      team_id: targetTeam.id,
+      team_id: teamId,
       user_id: userId,
-      role: targetTeam.count === 0 ? 'captain' : 'member',
+      role: 'captain',
     })
 
     if (insertError) {
